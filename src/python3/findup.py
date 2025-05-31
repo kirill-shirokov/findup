@@ -222,11 +222,11 @@ def calc_file_hash(file_name: str, size: int = None) -> str:
                    f"{'first ' + str(size) + ' bytes of ' if size else ''}{file_name}: ",
                    end='')
 
-    if ARGS.mock_prefix_hash and not size:
+    if ARGS.mock_prefix_hash and size:
         print_verbose3(f"{ARGS.mock_prefix_hash}")
         return ARGS.mock_prefix_hash
 
-    if ARGS.mock_full_hash and size:
+    if ARGS.mock_full_hash and not size:
         print_verbose3(f"{ARGS.mock_full_hash}")
         return ARGS.mock_full_hash
 
@@ -465,7 +465,8 @@ def process_args() -> argparse.Namespace:
         "Finds file duplicates by comparing sizes, hashes of file prefixes, and/or hashes of "
         "the full file contents. The program calculates both CRC32 and MMH3 hashes minimize hash collisions. "
         "The wasted space is rounded up to the file system cluster size if the script is able "
-        "to obtain this info from OS. ")
+        "to obtain this info from OS. ",
+        epilog=COPYRIGHT)
     p.add_argument('-q', '--quiet', action='store_true', default=False, help=
         "don't print even duplicate file names and summary. Useful for -e option")
     p.add_argument('-v', '--verbose', action='count', default=0, help=
@@ -480,10 +481,10 @@ def process_args() -> argparse.Namespace:
     p.add_argument('-a', '--exec-hash-arg', action='store_true', help=
         "include hash as the first argument in -e command (useless without -e)")
     p.add_argument('-m', '--min-file-size', default=4, type=int, help=
-        'minimum file size to include into analysis. Default is 4 bytes')
+        'minimum file size to include into analysis. Default is %(default)s bytes')
     p.add_argument('-p', '--prefix-size', default=1024, type=int, help=
         'size of prefix in prefix comparison: if checksums of the prefix are different, the complete file comparison '
-        'is skipped. Default is 1024 bytes')
+        'is skipped. Default is %(default)s bytes')
     p.add_argument('-i', '--paths', dest='paths_file',
         type=argparse.FileType('r'), help=
         "read directory names from a file or the standard input, if '-' is given. ")
