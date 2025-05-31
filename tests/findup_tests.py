@@ -95,7 +95,7 @@ class TestVersionArgument(unittest.TestCase):
         self.assertEqual(result.returncode, 0, "Program did not exit successfully")
         self.assertRegex(result.stdout.strip(),
             "TESTING TESTING 2554083253_-1451544911 data/dups/dir1/dup11.txt data/dups/dir1/dup12.txt data/dups/dir2/dup21.txt\\s+"
-            "TESTING TESTING 4092953971_-1108345294 data/largeDups/largeDir1/largeDup11.txt data/largeDups/largeDir2/largeDup21.txt\\s*",
+            "TESTING TESTING 1150183819_-460366701 data/largeDups/largeDir1/largeDup11.txt data/largeDups/largeDir2/largeDup21.txt\\s*",
             "Duplicate output does not match expected value")
 
     def test_paranoid(self):
