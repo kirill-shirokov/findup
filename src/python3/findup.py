@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
 import argparse
+import fnmatch
 import math
 import os
 import platform
+import re
 import sys
 import zlib
 from argparse import Namespace
@@ -53,7 +55,7 @@ def main() -> None:
 
 def get_paths() -> list[str]:
     """
-    Extracts list of directory paths to scan from argument file or stdin (-i option) plus command-line arguments.
+    Extracts list of directory paths to scan from argument file or stdin (--paths option) plus command-line arguments.
 
     :return: List of directory paths to scan, or emtpy list if none
     """
@@ -76,11 +78,14 @@ def add_files(path: str) -> None:
     """
     print_verbose1(f"Scanning {path}:")
 
-    for root, dirs, files in os.walk(path):
-        for dir_name in dirs:
-            add_files(os.path.join(root, dir_name))
-        for file_name in files:
-            add_file(os.path.join(root, file_name))
+    if os.path.isfile(path):
+        add_file(path)
+    else:
+        for root, dirs, files in os.walk(path):
+            for dir_name in dirs:
+                add_files(os.path.join(root, dir_name))
+            for file_name in files:
+                add_file(os.path.join(root, file_name))
 
 
 def save_cluster_size(path: str) -> None:
@@ -106,6 +111,14 @@ def add_file(file_name: str) -> None:
 
     :param file_name: File name to add
     """
+    if ARGS.exclude and any(fnmatch.fnmatch(file_name, glob) for glob in ARGS.exclude):
+        print_verbose2(f"    SKIPPED: {file_name}: excluded via -x")
+        return
+
+    if ARGS.exclude_re and any(re.match(regex, file_name) for regex in ARGS.exclude_re):
+        print_verbose2(f"    SKIPPED: {file_name}: excluded via -X")
+        return
+
     file_size = os.path.getsize(file_name)
 
     if file_size < ARGS.min_file_size:
@@ -154,7 +167,8 @@ def find_duplicates() -> None:
                 for cur_file_name in group[1:]:
                     wasted_disk_space += round_file_size(cur_file_name, size)
 
-                print_normal(f"Duplicates (wasted {humanize.naturalsize(wasted_disk_space)}):\n    {'\n    '.join(group)}")
+                print_normal(f"Duplicates ({size} bytes each, wasted {humanize.naturalsize(wasted_disk_space)}):\n"
+                             f"    {'\n    '.join(group)}")
 
                 execute_command_on_identical_files(group_hash, group)
 
@@ -243,7 +257,7 @@ def calc_file_hash(file_name: str, size: int = None) -> str:
             if not buffer:
                 break
             hash1 = zlib.crc32(buffer, hash1)
-            hash2 = mmh3.hash(buffer, hash2)
+            hash2 = mmh3.hash(buffer, hash2, signed=False)
             offset += len(buffer)
 
     file_hash = str(hash1) + "_" + str(hash2)
@@ -488,6 +502,10 @@ def process_args() -> argparse.Namespace:
     p.add_argument('-i', '--paths', dest='paths_file',
         type=argparse.FileType('r'), help=
         "read directory names from a file or the standard input, if '-' is given. ")
+    p.add_argument('-x', '--exclude', action='append', help=
+        "exclude files based on glob pattern(s). You can pass multiple -x arguments")
+    p.add_argument('-X', '--exclude-re', action='append', help=
+        "exclude files based on regexp(s). You can pass multiple -X arguments")
     p.add_argument('-V', '--version', action='version',
        version="%(prog)s " + PROG_VERSION + ". " + COPYRIGHT)
 

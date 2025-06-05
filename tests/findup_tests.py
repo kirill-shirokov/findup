@@ -21,11 +21,46 @@ class TestVersionArgument(unittest.TestCase):
             capture_output=True, text=True)
 
         self.assertEqual(result.returncode, 0, "Program did not exit successfully")
-        self.assertRegex(result.stdout.strip(), "Duplicates \\(wasted [\\d.]+ MB\\):\\s+"
+        self.assertRegex(result.stdout.strip(), "Duplicates \\(\\d+ bytes each, wasted [\\d.]+ MB\\):\\s+"
             "data/dups/dir1/dup11.txt\\s+"
             "data/dups/dir1/dup12.txt\\s+"
             "data/dups/dir2/dup21.txt\\s+"
             "Total wasted disk space in 2 files: [\\d.]+ MB\\s*",
+            "Duplicate output does not match expected value")
+
+    def test_paths_file(self):
+        """Test that the program correctly returns its version when --version is passed."""
+        result = subprocess.run(["python3", ARGS.findup,
+             "-i", "data/paths.txt"],
+            capture_output=True, text=True)
+
+        self.assertEqual(result.returncode, 0, "Program did not exit successfully")
+        self.assertRegex(result.stdout.strip(), "Duplicates \\(\\d+ bytes each, wasted [\\d.]+ MB\\):\\s+"
+            "data/dups/dir1/dup11.txt\\s+"
+            "data/dups/dir1/dup12.txt\\s+"
+            "data/dups/dir2/dup21.txt\\s+"
+            "Duplicates \\(\\d+ bytes each, wasted [\\d.]+ MB\\):\\s+"
+            "data/largeDups/largeDir1/largeDup11.txt\\s+"
+            "data/largeDups/largeDir2/largeDup21.txt\\s+"
+            "Total wasted disk space in 3 files: [\\d.]+ MB\\s*",
+            "Duplicate output does not match expected value")
+
+    def test_paths_stdin(self):
+        """Test that the program correctly returns its version when --version is passed."""
+        result = subprocess.run(["python3", ARGS.findup,
+             "-i", "-"],
+            input="data/dups\ndata/largeDups\n",
+            capture_output=True, text=True)
+
+        self.assertEqual(result.returncode, 0, "Program did not exit successfully")
+        self.assertRegex(result.stdout.strip(), "Duplicates \\(\\d+ bytes each, wasted [\\d.]+ MB\\):\\s+"
+            "data/dups/dir1/dup11.txt\\s+"
+            "data/dups/dir1/dup12.txt\\s+"
+            "data/dups/dir2/dup21.txt\\s+"
+            "Duplicates \\(\\d+ bytes each, wasted [\\d.]+ MB\\):\\s+"
+            "data/largeDups/largeDir1/largeDup11.txt\\s+"
+            "data/largeDups/largeDir2/largeDup21.txt\\s+"
+            "Total wasted disk space in 3 files: [\\d.]+ MB\\s*",
             "Duplicate output does not match expected value")
 
     def test_no_summary(self):
@@ -36,7 +71,7 @@ class TestVersionArgument(unittest.TestCase):
             capture_output=True, text=True)
 
         self.assertEqual(result.returncode, 0, "Program did not exit successfully")
-        self.assertRegex(result.stdout.strip(), "Duplicates \\(wasted [\\d.]+ MB\\):\\s+"
+        self.assertRegex(result.stdout.strip(), "Duplicates \\(\\d+ bytes each, wasted [\\d.]+ MB\\):\\s+"
             "data/dups/dir1/dup11.txt\\s+"
             "data/dups/dir1/dup12.txt\\s+"
             "data/dups/dir2/dup21.txt\\s*",
@@ -50,7 +85,7 @@ class TestVersionArgument(unittest.TestCase):
             capture_output=True, text=True)
 
         self.assertEqual(result.returncode, 0, "Program did not exit successfully")
-        self.assertRegex(result.stdout.strip(), "Duplicates \\(wasted [\\d.]+ MB\\):\\s+"
+        self.assertRegex(result.stdout.strip(), "Duplicates \\(\\d+ bytes each, wasted [\\d.]+ MB\\):\\s+"
             "data/dups/dir1/dup11.txt\\s+"
             "data/dups/dir1/dup12.txt\\s+"
             "data/dups/dir1/notdup13-sameSize-differentLastChar.txt\\s+"
@@ -66,7 +101,7 @@ class TestVersionArgument(unittest.TestCase):
             capture_output=True, text=True)
 
         self.assertEqual(result.returncode, 0, "Program did not exit successfully")
-        self.assertRegex(result.stdout.strip(), "Duplicates \\(wasted [\\d.]+ MB\\):\\s+"
+        self.assertRegex(result.stdout.strip(), "Duplicates \\(\\d+ bytes each, wasted [\\d.]+ MB\\):\\s+"
             "data/largeDups/largeDir1/largeDup11.txt\\s+"
             "data/largeDups/largeDir2/largeDup21.txt\\s+"
             "Total wasted disk space in 1 files: [\\d.]+ MB\\s*",
@@ -76,7 +111,8 @@ class TestVersionArgument(unittest.TestCase):
         """Test that the program correctly returns its version when --version is passed."""
         result = subprocess.run(["python3", ARGS.findup,
              "-q", "-e", "echo TESTING TESTING",
-             "data/dups", "data/largeDups"],
+             "-i", "-"],
+            input="data/dups\ndata/largeDups\n",
             capture_output=True, text=True)
 
         self.assertEqual(result.returncode, 0, "Program did not exit successfully")
@@ -94,8 +130,8 @@ class TestVersionArgument(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, "Program did not exit successfully")
         self.assertRegex(result.stdout.strip(),
-            "TESTING TESTING 2554083253_-1451544911 data/dups/dir1/dup11.txt data/dups/dir1/dup12.txt data/dups/dir2/dup21.txt\\s+"
-            "TESTING TESTING 1150183819_-460366701 data/largeDups/largeDir1/largeDup11.txt data/largeDups/largeDir2/largeDup21.txt\\s*",
+            "TESTING TESTING 2554083253_2843422385 data/dups/dir1/dup11.txt data/dups/dir1/dup12.txt data/dups/dir2/dup21.txt\\s+"
+            "TESTING TESTING 1150183819_3834600595 data/largeDups/largeDir1/largeDup11.txt data/largeDups/largeDir2/largeDup21.txt\\s*",
             "Duplicate output does not match expected value")
 
     def test_paranoid(self):
@@ -106,12 +142,12 @@ class TestVersionArgument(unittest.TestCase):
             capture_output=True, text=True)
 
         self.assertEqual(result.returncode, 0, "Program did not exit successfully")
-        self.assertRegex(result.stdout.strip(), "Duplicates \\(wasted [\\d.]+ MB\\):\\s+"
+        self.assertRegex(result.stdout.strip(), "Duplicates \\(\\d+ bytes each, wasted [\\d.]+ MB\\):\\s+"
             "data/dups/dir1/dup11.txt\\s+"
             "data/dups/dir1/dup12.txt\\s+"
             "data/dups/dir1/notdup13-sameSize-differentLastChar.txt\\s+"
             "data/dups/dir2/dup21.txt\\s+"
-            "Duplicates \\(wasted [\\d.]+ MB\\):\\s+"
+            "Duplicates \\(\\d+ bytes each, wasted [\\d.]+ MB\\):\\s+"
             "data/dups/dir1/notdup11.txt\\s+"
             "data/dups/dir1/notdup12-additionalLFs.txt\\s+"
             "Total wasted disk space in 4 files: [\\d.]+ MB\\s*",
@@ -123,12 +159,53 @@ class TestVersionArgument(unittest.TestCase):
             capture_output=True, text=True)
 
         self.assertEqual(result.returncode, 0, "Program did not exit successfully")
-        self.assertRegex(result.stdout.strip(), "Duplicates \\(wasted [\\d.]+ MB\\):\\s+"
+        self.assertRegex(result.stdout.strip(), "Duplicates \\(\\d+ bytes each, wasted [\\d.]+ MB\\):\\s+"
             "data/dups/dir1/dup11.txt\\s+"
             "data/dups/dir1/dup12.txt\\s+"
             "data/dups/dir2/dup21.txt\\s+"
             "Total wasted disk space in 2 files: [\\d.]+ MB\\s*",
             "Duplicate output does not match expected value")
+
+    def test_exclude_dir(self):
+        """Test that the program correctly returns its version when --version is passed."""
+        result = subprocess.run(["python3", ARGS.findup,
+             "-x", "**/dir2/**", "data/dups"],
+            capture_output=True, text=True)
+
+        self.assertEqual(result.returncode, 0, "Program did not exit successfully")
+        self.assertRegex(result.stdout.strip(), "Duplicates \\(\\d+ bytes each, wasted [\\d.]+ MB\\):\\s+"
+            "data/dups/dir1/dup11.txt\\s+"
+            "data/dups/dir1/dup12.txt\\s+"
+            "Total wasted disk space in 1 files: [\\d.]+ MB\\s*",
+                     "Duplicate output does not match expected value")
+
+    def test_exclude_file(self):
+        """Test that the program correctly returns its version when --version is passed."""
+        result = subprocess.run(["python3", ARGS.findup,
+             "-x", "**/dir2/dup*", "-x", "**/nonexisting/**", "data/dups"],
+            capture_output=True, text=True)
+
+        self.assertEqual(result.returncode, 0, "Program did not exit successfully")
+        self.assertRegex(result.stdout.strip(), "Duplicates \\(\\d+ bytes each, wasted [\\d.]+ MB\\):\\s+"
+            "data/dups/dir1/dup11.txt\\s+"
+            "data/dups/dir1/dup12.txt\\s+"
+            "Total wasted disk space in 1 files: [\\d.]+ MB\\s*",
+                     "Duplicate output does not match expected value")
+
+
+    def test_exclude_re(self):
+        """Test that the program correctly returns its version when --version is passed."""
+        result = subprocess.run(["python3", ARGS.findup,
+             "-X", "^.*/dir[234]/du[^b].*$", "-X", "weird", "data/dups"],
+            capture_output=True, text=True)
+
+        self.assertEqual(result.returncode, 0, "Program did not exit successfully")
+        self.assertRegex(result.stdout.strip(), "Duplicates \\(\\d+ bytes each, wasted [\\d.]+ MB\\):\\s+"
+            "data/dups/dir1/dup11.txt\\s+"
+            "data/dups/dir1/dup12.txt\\s+"
+            "Total wasted disk space in 1 files: [\\d.]+ MB\\s*",
+            "Duplicate output does not match expected value")
+
 
 def parse_args():
     p = argparse.ArgumentParser()
