@@ -1,9 +1,9 @@
 .PHONY: all
-all:	README.md
+all: README.md
 
 README.md: doc/readme-header.md generated/usage.txt doc/readme-footer.md
 	cat $^ >$@
 
-generated/usage.txt:
+generated/usage.txt: src/python3/findup.py
 	mkdir -p `dirname $@`
-	src/python3/findup.py -h >$@
+	bash -c ". .venv/bin/activate && $< -h >$@"

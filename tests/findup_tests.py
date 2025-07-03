@@ -5,7 +5,7 @@ import unittest
 ARGS = argparse.Namespace(findup = '../src/python3/findup.py')
 
 
-class TestVersionArgument(unittest.TestCase):
+class TestBasicArguments(unittest.TestCase):
     def test_version_argument(self):
         """Test that the program correctly returns its version when --version is passed."""
         result = subprocess.run(["python3", ARGS.findup, "-V"], capture_output=True, text=True)
@@ -31,7 +31,7 @@ class TestVersionArgument(unittest.TestCase):
     def test_paths_file(self):
         """Test that the program correctly returns its version when --version is passed."""
         result = subprocess.run(["python3", ARGS.findup,
-             "-i", "data/paths.txt"],
+             "-p", "data/paths.txt"],
             capture_output=True, text=True)
 
         self.assertEqual(result.returncode, 0, "Program did not exit successfully")
@@ -48,7 +48,7 @@ class TestVersionArgument(unittest.TestCase):
     def test_paths_stdin(self):
         """Test that the program correctly returns its version when --version is passed."""
         result = subprocess.run(["python3", ARGS.findup,
-             "-i", "-"],
+             "-p", "-"],
             input="data/dups\ndata/largeDups\n",
             capture_output=True, text=True)
 
@@ -111,7 +111,7 @@ class TestVersionArgument(unittest.TestCase):
         """Test that the program correctly returns its version when --version is passed."""
         result = subprocess.run(["python3", ARGS.findup,
              "-q", "-e", "echo TESTING TESTING",
-             "-i", "-"],
+             "-p", "-"],
             input="data/dups\ndata/largeDups\n",
             capture_output=True, text=True)
 
@@ -169,7 +169,20 @@ class TestVersionArgument(unittest.TestCase):
     def test_exclude_dir(self):
         """Test that the program correctly returns its version when --version is passed."""
         result = subprocess.run(["python3", ARGS.findup,
-             "-x", "**/dir2/**", "data/dups"],
+             "-X", "**/dir2", "data/dups"],
+            capture_output=True, text=True)
+
+        self.assertEqual(result.returncode, 0, "Program did not exit successfully")
+        self.assertRegex(result.stdout.strip(), "Duplicates \\(\\d+ bytes each, wasted [\\d.]+ MB\\):\\s+"
+            "data/dups/dir1/dup11.txt\\s+"
+            "data/dups/dir1/dup12.txt\\s+"
+            "Total wasted disk space in 1 files: [\\d.]+ MB\\s*",
+                     "Duplicate output does not match expected value")
+
+    def test_exclude_dir_re(self):
+        """Test that the program correctly returns its version when --version is passed."""
+        result = subprocess.run(["python3", ARGS.findup,
+             "-X", "re:^.*/dir2$", "data/dups"],
             capture_output=True, text=True)
 
         self.assertEqual(result.returncode, 0, "Program did not exit successfully")
@@ -196,7 +209,7 @@ class TestVersionArgument(unittest.TestCase):
     def test_exclude_re(self):
         """Test that the program correctly returns its version when --version is passed."""
         result = subprocess.run(["python3", ARGS.findup,
-             "-X", "^.*/dir[234]/du[^b].*$", "-X", "weird", "data/dups"],
+             "-x", "re:^.*/dir[234]/du[^b].*$", "-x", "re:weird", "data/dups"],
             capture_output=True, text=True)
 
         self.assertEqual(result.returncode, 0, "Program did not exit successfully")

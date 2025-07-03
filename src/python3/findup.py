@@ -9,6 +9,8 @@ import re
 import sys
 import zlib
 from argparse import Namespace
+from collections import namedtuple
+from typing import Generator, Union, Callable
 
 import humanize
 import mmh3
@@ -31,6 +33,13 @@ FILES_BY_SIZE: dict[int, set[str]] = {}
 SIZE_BY_FILE: dict[str, int] = {}
 """ Filesystem cluster size in bytes per path given in arguments. Used to calculate wasted disk space """
 CLUSTER_SIZE_BY_PATH: dict[str, int] = {}
+""" Modification/creation times for files if sorting results is requested """
+MTIME_BY_FILE = {}
+CTIME_BY_FILE = {}
+
+
+DuplicateFiles = namedtuple('DuplicateFiles', ['files', 'file_size', 'wasted_disk_space'])
+Summary = namedtuple('Summary', ['total_duplicates', 'total_wasted_disk_space'])
 
 
 def main() -> None:
@@ -50,7 +59,158 @@ def main() -> None:
         save_cluster_size(path)
         add_files(path)
 
-    find_duplicates()
+    print_results(find_duplicates())
+
+
+def print_results(results: Generator[DuplicateFiles | Summary, None, None]) -> None:
+    if not ARGS.sort_output:
+        # Print results as we go
+        for result in results:
+            if isinstance(result, DuplicateFiles):
+                print_duplicates_result(result)
+            elif isinstance(result, Summary):
+                print_summary_result(result)
+            else:
+                raise NotImplemented
+
+    else:
+        # Collect results, sort, and print
+        duplicates = []
+        summary = None
+        for result in results:
+            if isinstance(result, DuplicateFiles):
+                duplicates.append(result)
+            elif isinstance(result, Summary):
+                summary = result
+            else:
+                raise NotImplemented
+
+        for result in sort_results(duplicates):
+            print_duplicates_result(result)
+
+        if summary:
+            print_summary_result(summary)
+
+
+def sort_results(results: list[DuplicateFiles]) -> list[DuplicateFiles]:
+    return sorted(results, key=ARGS.sort_output_comparator) if ARGS.sort_output_comparator else results
+
+
+def compile_comparator(sort_order: str, comparator_field_getter: Callable[[str], Callable[[...], str | float]]):
+    sort_comparators = []
+    field_comparator = lambda a, b: 0 if a == b else -1 if a < b else 1
+    reverse_field_comparator = lambda b, a: 0 if a == b else -1 if a < b else 1
+
+    for sort_key in re.split(r'\s*,\s*', sort_order):
+        fc = reverse_field_comparator if sort_key.startswith('~') else field_comparator
+        field = re.sub(r'^~', '', sort_key)
+
+        field_getter = comparator_field_getter(field)
+
+        if field_getter:
+            sort_comparators.append(lambda dfa, dfb: fc(field_getter(dfa), field_getter(dfb)))
+
+    if len(sort_comparators) == 0:
+       return None
+
+    class Comparator:
+        def __init__(self, obj):
+            self.obj = obj
+
+        def __lt__(self, other):
+            a = self.obj
+            b = other.obj
+
+            for comparator in sort_comparators:
+                cmp = comparator(a, b)
+                if cmp != 0:
+                    return cmp == -1
+
+            return 0
+
+    return Comparator
+
+
+def get_output_sort_order_getter(field: str) -> Callable[[DuplicateFiles], str | float]:
+    field_getter = None
+
+    match field:
+        case 'name':
+            field_getter = lambda duplicate_files: os.path.basename(duplicate_files.files[0])
+        case 'path':
+            field_getter = lambda duplicate_files: duplicate_files.files[0]
+        case 'size':
+            field_getter = lambda duplicate_files: duplicate_files.file_size
+        case 'wasted':
+            field_getter = lambda duplicate_files: duplicate_files.wasted_disk_space
+        case 'mtime':
+            field_getter = lambda duplicate_files: get_files_time(duplicate_files.files, min,
+                                                                  os.path.getmtime, MTIME_BY_FILE)
+        case 'Mtime':
+            field_getter = lambda duplicate_files: get_files_time(duplicate_files.files, max,
+                                                                  os.path.getmtime, MTIME_BY_FILE)
+        case 'ctime':
+            field_getter = lambda duplicate_files: get_files_time(duplicate_files.files, min,
+                                                                  os.path.getctime, CTIME_BY_FILE)
+        case 'Ctime':
+            field_getter = lambda duplicate_files: get_files_time(duplicate_files.files, max,
+                                                                  os.path.getctime, CTIME_BY_FILE)
+        case _:
+            print_error(f"WARNING: Skipping unrecognized output sort field '{field}'")
+
+    return field_getter
+
+
+def get_group_sort_order_getter(field: str) -> Callable[[str], str | float]:
+    field_getter = None
+
+    match field:
+        case 'name':
+            field_getter = lambda file_name: os.path.basename(file_name)
+        case 'path':
+            field_getter = lambda file_name: file_name
+        case 'mtime':
+            field_getter = lambda file_name: get_files_time([file_name], min,
+                                                            os.path.getmtime, MTIME_BY_FILE)
+        case 'ctime':
+            field_getter = lambda file_name: get_files_time([file_name], min,
+                                                            os.path.getctime, CTIME_BY_FILE)
+        case _:
+            print_error(f"WARNING: Skipping uSkipping unrecognized group sort field '{field}'")
+
+    return field_getter
+
+
+def get_files_time(files: list[str],
+                   aggregate_fn: Callable[[float, float], float],
+                   get_time_fn: Callable[[str], float],
+                   time_cache: dict[str, float]) -> float:
+    winner = None
+
+    for file in files:
+        try:
+            if file in time_cache:
+                time = time_cache[file]
+            else:
+                time = get_time_fn(file)
+                time_cache[file] = time
+            if not winner or aggregate_fn(time, winner):
+                winner = time
+        except AttributeError:
+            print_error(f"WARNING: Cannot obtain file time for '{file}'. Skipped")
+
+    return winner
+
+
+def print_duplicates_result(result: DuplicateFiles) -> None:
+    print_normal(f"Duplicates ({result.file_size} bytes each, "
+                 f"wasted {humanize.naturalsize(result.wasted_disk_space)}):\n"
+                 f"    {'\n    '.join(result.files)}")
+
+
+def print_summary_result(result: Summary) -> None:
+    print_summary(f"Total wasted disk space in {str(result.total_duplicates)} files: "
+                  f"{humanize.naturalsize(result.total_wasted_disk_space)}")
 
 
 def get_paths() -> list[str]:
@@ -76,16 +236,20 @@ def add_files(path: str) -> None:
 
     :param path: Filesystem path to scan.
     """
+    if exclude_dir(path):
+        print_verbose2(f"    SKIPPED: {path}: excluded via -I/-X")
+        return
+
     print_verbose1(f"Scanning {path}:")
 
     if os.path.isfile(path):
         add_file(path)
     else:
-        for root, dirs, files in os.walk(path):
-            for dir_name in dirs:
-                add_files(os.path.join(root, dir_name))
-            for file_name in files:
-                add_file(os.path.join(root, file_name))
+        for entry in os.scandir(path):
+            if entry.is_dir(follow_symlinks=ARGS.follow_symlinks):
+                add_files(os.path.join(path, entry.name))
+            if entry.is_file(follow_symlinks=ARGS.follow_symlinks):
+                add_file(os.path.join(path, entry.name))
 
 
 def save_cluster_size(path: str) -> None:
@@ -101,7 +265,7 @@ def save_cluster_size(path: str) -> None:
         print_verbose2(f"Cluster size: {humanize.naturalsize(cluster_size)}")
 
     except OSError as ex:
-        print_verbose3(f"Error obtaining cluster size for {path}: {ex}")
+        print_error(f"WARNING: Error obtaining cluster size for '{path}': {ex}")
 
 
 def add_file(file_name: str) -> None:
@@ -111,12 +275,8 @@ def add_file(file_name: str) -> None:
 
     :param file_name: File name to add
     """
-    if ARGS.exclude and any(fnmatch.fnmatch(file_name, glob) for glob in ARGS.exclude):
-        print_verbose2(f"    SKIPPED: {file_name}: excluded via -x")
-        return
-
-    if ARGS.exclude_re and any(re.match(regex, file_name) for regex in ARGS.exclude_re):
-        print_verbose2(f"    SKIPPED: {file_name}: excluded via -X")
+    if exclude_file(file_name):
+        print_verbose2(f"    SKIPPED: {file_name}: excluded via -i/-x")
         return
 
     file_size = os.path.getsize(file_name)
@@ -131,7 +291,50 @@ def add_file(file_name: str) -> None:
     SIZE_BY_FILE[file_name] = file_size
 
 
-def find_duplicates() -> None:
+def exclude_dir(file_name: str) -> bool:
+    """
+    Tests whether the directory name matches the inclusion/exclusion patterns specified in arguments.
+
+    :param file_name: Directory name to check against patterns
+    :return: True if directory should be skipped, False if processed
+    """
+    if ARGS.exclude_dir and any(match_pattern(file_name, pattern) for pattern in ARGS.exclude_dir):
+        return True
+
+    if ARGS.include_dir and any(match_pattern(file_name, pattern) for pattern in ARGS.include_dir):
+        return False
+
+    return False
+
+
+def exclude_file(file_name: str) -> bool:
+    """
+    Tests whether the file name matches the inclusion/exclusion patterns specified in arguments.
+
+    :param file_name: File name to check against patterns
+    :return: True if file should be skipped, False if processed
+    """
+    if ARGS.exclude and any(match_pattern(file_name, glob) for glob in ARGS.exclude):
+        return True
+
+    if ARGS.include and any(match_pattern(file_name, glob) for glob in ARGS.include):
+        return False
+
+    return False
+
+
+def match_pattern(file_name, glob_or_re) -> bool:
+    """
+    Matches either glob or regexp (prefixed with 're:' against a file_name.
+
+    :param file_name: File name to match
+    :param glob_or_re: glob pattern or regular expression (the latter should be prefixed with 're:')
+    :return: True if file_name matches
+    """
+    return re.match(glob_or_re[3:], file_name) if glob_or_re.startswith('re:') else fnmatch.fnmatch(file_name, glob_or_re)
+
+
+def find_duplicates() -> Generator[Union[DuplicateFiles, Summary], None, None]:
     """
     Searches for duplicates and prints them and/or executes a scripts. Calculates and reports wasted space.
     Files are grouped first by size (in add_file() function), within groups, hashes are calculated for file prefix
@@ -167,16 +370,14 @@ def find_duplicates() -> None:
                 for cur_file_name in group[1:]:
                     wasted_disk_space += round_file_size(cur_file_name, size)
 
-                print_normal(f"Duplicates ({size} bytes each, wasted {humanize.naturalsize(wasted_disk_space)}):\n"
-                             f"    {'\n    '.join(group)}")
+                yield DuplicateFiles(files=group, file_size=size, wasted_disk_space=wasted_disk_space)
 
                 execute_command_on_identical_files(group_hash, group)
 
                 total_wasted_disk_space += wasted_disk_space
                 total_duplicates += duplicate_count
 
-    print_summary(f"Total wasted disk space in {str(total_duplicates)} files: "
-                  f"{humanize.naturalsize(total_wasted_disk_space)}")
+    yield Summary(total_duplicates, total_wasted_disk_space)
 
 
 def group_by_prefix_hash(file_names: set[str], size: int) -> dict[str, set[str]]:
@@ -280,7 +481,7 @@ def group_by_hash_or_contents(file_by_hash: dict[str, set[str]]) -> dict[str, li
         if len(cur_file_names) < 2:
             continue
 
-        sorted_file_names = sorted(list(cur_file_names))
+        sorted_file_names = sorted(list(cur_file_names), key=ARGS.sort_group_comparator)
 
         if ARGS.paranoid:
             file_groups.setdefault(group_hash, list()).extend(paranoid_compare_files(sorted_file_names))
@@ -396,12 +597,19 @@ def get_cluster_size(file_name: str) -> [int, None]:
     return None
 
 
+def print_error(*args, **kwargs) -> None:
+    """
+    Prints normal line, if no quiet argument given to the program. See print() for arguments.
+    """
+    print(file=sys.stderr, *args, **kwargs)
+
+
 def print_normal(*args, **kwargs) -> None:
     """
     Prints normal line, if no quiet argument given to the program. See print() for arguments.
     """
     if not ARGS.quiet:
-        print(*args, **kwargs)
+        print(file=ARGS.output, *args, **kwargs)
 
 
 def print_verbose1(*args, **kwargs) -> None:
@@ -433,7 +641,7 @@ def print_summary(*args, **kwargs) -> None:
     Prints summary if summary printing is enabled in program arguments. See print() for arguments.
     """
     if not ARGS.quiet and not ARGS.no_summary:
-        print(*args, **kwargs)
+        print(file=ARGS.output, *args, **kwargs)
 
 
 def fs_cluster_size(path: str) -> int:
@@ -476,9 +684,9 @@ def process_args() -> argparse.Namespace:
     :return: Parsed arguments
     """
     p = argparse.ArgumentParser(prog=PROG_NAME, description=
-        "Finds file duplicates by comparing sizes, hashes of file prefixes, and/or hashes of "
-        "the full file contents. The program calculates both CRC32 and MMH3 hashes minimize hash collisions. "
-        "The wasted space is rounded up to the file system cluster size if the script is able "
+        "Finds file duplicates by comparing sizes, hashes of file prefixes, hashes of the full file contents and "
+        "optionally the binary contents themselves. The program calculates both CRC32 and MMH3 hashes minimize hash "
+        "collisions. The wasted space is rounded up to the file system cluster size if the script is able "
         "to obtain this info from OS. ",
         epilog=COPYRIGHT)
     p.add_argument('-q', '--quiet', action='store_true', default=False, help=
@@ -487,6 +695,21 @@ def process_args() -> argparse.Namespace:
         'verbosity level 1-3 (-v, -vv, -vvv)')
     p.add_argument('-S', '--no-summary', action="store_true", help=
         "don't print summary about wasted space")
+    p.add_argument('-o', '--output', help=
+        "output report to a file. Verbose messages and errors are still written to stdout/stderr. "
+        "-q option suppresses the output")
+    p.add_argument('-s', '--sort-output', help=
+        "comma-separated list of fields to sort the results: name, path, size, wasted, mtime, Mtime, ctime, Ctime. "
+        "Prefixing field with '~' reverses the order. "
+        "<size> is the file size, <wasted> is the total wasted disk space for the current duplicates group. "
+        "<name> is just file name of the first file in the group, <path> is full path of the first file. "
+        "<ctime>/<Ctime>/<mtime>/Mtime>: lower case letter chooses minimal time in duplicates group, while the upper "
+        "case finds maximal time. "
+        "Sorting does not impact invocation order of -e")
+    p.add_argument('-g', '--sort-group', default='path', help=
+        "comma-separated list of fields to sort the file names within duplicates group: name, path, mtime, ctime. "
+        "Please see -s option above for explanation. "
+        "This option DOES impact order of files in -e. If not specified, files are sorted by path.")
     p.add_argument('-d', '--paranoid', action='store_true', default=False, help=
         "don't trust those hashes. Compare files byte-by-byte in a hardcode way, if size and hashes match. "
         "Can significantly increase execution time")
@@ -496,16 +719,26 @@ def process_args() -> argparse.Namespace:
         "include hash as the first argument in -e command (useless without -e)")
     p.add_argument('-m', '--min-file-size', default=4, type=int, help=
         'minimum file size to include into analysis. Default is %(default)s bytes')
-    p.add_argument('-p', '--prefix-size', default=1024, type=int, help=
+    p.add_argument('-b', '--prefix-size', default=1024, type=int, help=
         'size of prefix in prefix comparison: if checksums of the prefix are different, the complete file comparison '
         'is skipped. Default is %(default)s bytes')
-    p.add_argument('-i', '--paths', dest='paths_file',
-        type=argparse.FileType('r'), help=
-        "read directory names from a file or the standard input, if '-' is given. ")
     p.add_argument('-x', '--exclude', action='append', help=
-        "exclude files based on glob pattern(s). You can pass multiple -x arguments")
-    p.add_argument('-X', '--exclude-re', action='append', help=
-        "exclude files based on regexp(s). You can pass multiple -X arguments")
+        "exclude files based on glob pattern or regexp (if prefixed with 're:'). "
+        "You can pass multiple -x arguments")
+    p.add_argument('-i', '--include', action='append', help=
+        "only include files based on glob pattern or regexp (if prefixed with 're:'). "
+        "You can pass multiple -i arguments. Processed after -x")
+    p.add_argument('-X', '--exclude-dir', action='append', help=
+        "exclude directories (full paths) based on glob pattern or regexp (if prefixed with 're:'). "
+        "You can pass multiple -X arguments")
+    p.add_argument('-I', '--include-dir', action='append', help=
+        "only include directories (full paths) based on glob pattern or regexp (if prefixed with 're:'). "
+        "You can pass multiple -I arguments. Processed after -X")
+    p.add_argument('-L', '--no-follow-symlinks', dest="follow_symlinks", action='store_false', help=
+        "don't follow symlinks")
+    p.add_argument('-p', '--paths', dest='paths_file',
+        type=argparse.FileType('r'), help=
+        "read directory/file names from a file or the standard input, if '-' is given. ")
     p.add_argument('-V', '--version', action='version',
        version="%(prog)s " + PROG_VERSION + ". " + COPYRIGHT)
 
@@ -515,7 +748,7 @@ def process_args() -> argparse.Namespace:
     p.add_argument("--mock-full-hash", help=argparse.SUPPRESS)
 
     p.add_argument("paths", nargs="*", help=
-        "one or more directory names where to search for files recursively")
+        "one or more file or directory names where to search for files recursively")
 
     if len(sys.argv) == 0:
         p.print_help()
@@ -526,6 +759,16 @@ def process_args() -> argparse.Namespace:
     if not args.paths_file and len(args.paths) == 0:
         p.print_help()
         exit(1)
+
+    if not args.output or args.output == '-':
+        args.output = sys.stdout
+    else:
+        args.output = open(args.output, mode="wt+")
+
+    args.sort_group_comparator = compile_comparator(args.sort_group, get_group_sort_order_getter)
+
+    if args.sort_output:
+        args.sort_output_comparator = compile_comparator(args.sort_output, get_output_sort_order_getter)
 
     verify_arguments(args)
 
@@ -552,6 +795,9 @@ def verify_arguments(args: argparse.Namespace) -> None:
 
     if args.paths_file and args.paths:
         print_verbose1("INFO: Directories supplied in both --paths option and as program arguments. Will scan all of them")
+
+    if args.include and args.exclude:
+        print_verbose1("INFO: Both inclusion and exclusion arguments specified. Exclusion ones will be processed before inclusion")
 
 
 if __name__ == '__main__':
