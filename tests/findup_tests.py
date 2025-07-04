@@ -124,7 +124,7 @@ class TestBasicArguments(unittest.TestCase):
     def test_exec_with_hash(self):
         """Test that the program correctly returns its version when --version is passed."""
         result = subprocess.run(["python3", ARGS.findup,
-             "-q", "-a", "-e", "echo TESTING TESTING",
+             "-q", "-a", "{cmd} {hash} {files}", "-e", "echo TESTING TESTING",
              "data/dups", "data/largeDups"],
             capture_output=True, text=True)
 
@@ -154,7 +154,7 @@ class TestBasicArguments(unittest.TestCase):
             "Duplicate output does not match expected value")
 
         result = subprocess.run(["python3", ARGS.findup,
-             "--mock-prefix-hash", "0", "--mock-full-hash", "1", "-d",
+             "--mock-prefix-hash", "0", "--mock-full-hash", "1", "-@",
              "data/dups"],
             capture_output=True, text=True)
 

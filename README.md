@@ -1,14 +1,14 @@
 # findup
 
-A simple utility for finding duplicate files. Requires Python 3.
+A simple utility for finding duplicate files. Requires Python 3.8+
 
 Usage: 
 
 ```
-usage: findup [-h] [-q] [-v] [-S] [-o OUTPUT] [-s SORT_OUTPUT] [-g SORT_GROUP]
-              [-d] [-e EXEC] [-a] [-m MIN_FILE_SIZE] [-b PREFIX_SIZE]
-              [-x EXCLUDE] [-i INCLUDE] [-X EXCLUDE_DIR] [-I INCLUDE_DIR] [-L]
-              [-p PATHS_FILE] [-V]
+usage: findup [-h] [-V] [-q] [-v] [-S] [-d] [-o OUTPUT] [-s SORT_OUTPUT]
+              [-g SORT_GROUP] [-f OUTPUT_FORMAT] [-e EXEC] [-a EXEC_FORMAT]
+              [-m MIN_FILE_SIZE] [-b PREFIX_SIZE] [-x EXCLUDE] [-i INCLUDE]
+              [-X EXCLUDE_DIR] [-I INCLUDE_DIR] [-L] [-@] [-p PATHS_FILE]
               [paths ...]
 
 Finds file duplicates by comparing sizes, hashes of file prefixes, hashes of
@@ -23,10 +23,14 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
+  -V, --version         show program's version number and exit
   -q, --quiet           don't print even duplicate file names and summary.
                         Useful for -e option
   -v, --verbose         verbosity level 1-3 (-v, -vv, -vvv)
   -S, --no-summary      don't print summary about wasted space
+  -d, --dup-dirs        after scanning files identify duplicate directories
+                        (where all files are duplicates to files in another
+                        directory, after filtering with -i/-I/-x/-X)
   -o, --output OUTPUT   output report to a file. Verbose messages and errors
                         are still written to stdout/stderr. -q option
                         suppresses the output
@@ -40,20 +44,23 @@ options:
                         path of the first file.
                         <ctime>/<Ctime>/<mtime>/Mtime>: lower case letter
                         chooses minimal time in duplicates group, while the
-                        upper case finds maximal time. Sorting does not impact
-                        invocation order of -e
+                        upper case uses maximal time.
   -g, --sort-group SORT_GROUP
                         comma-separated list of fields to sort the file names
                         within duplicates group: name, path, mtime, ctime.
                         Please see -s option above for explanation. This
                         option DOES impact order of files in -e. If not
                         specified, files are sorted by path.
-  -d, --paranoid        don't trust those hashes. Compare files byte-by-byte
-                        in a hardcode way, if size and hashes match. Can
-                        significantly increase execution time
+  -f, --output-format OUTPUT_FORMAT
+                        Output format as str.format() string. Variables:
+                        {files}, {file_size}, {file_size_h},
+                        {wasted_disk_space}, {wasted_disk_space_h}. _h suffix
+                        is for human-readable sizes
   -e, --exec EXEC       execute a command for each group of identical files
-  -a, --exec-hash-arg   include hash as the first argument in -e command
-                        (useless without -e)
+  -a, --exec-format EXEC_FORMAT
+                        argument format for -e command (useless without -e).
+                        Default is '{cmd} {files}', but you can also add
+                        {hash} and {file_size}
   -m, --min-file-size MIN_FILE_SIZE
                         minimum file size to include into analysis. Default is
                         4 bytes
@@ -79,10 +86,12 @@ options:
                         pass multiple -I arguments. Processed after -X
   -L, --no-follow-symlinks
                         don't follow symlinks
+  -@, --paranoid        don't trust those hashes. Compare files byte-by-byte
+                        in a hardcode way, if size and hashes match. Can
+                        significantly increase execution time
   -p, --paths PATHS_FILE
                         read directory/file names from a file or the standard
                         input, if '-' is given.
-  -V, --version         show program's version number and exit
 
 Copyright (c) Kirill Shirokov, 2022-2025
 ```

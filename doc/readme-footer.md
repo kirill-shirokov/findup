@@ -10,4 +10,5 @@ because I wanted to have full-fledged demo projects on GitHub for potential empl
 Kirill Shirokov
 
 - Email: [kirill.shirokov@gmail.com](mailto:kirill.shirokov@gmail.com)
+- Github: [https://github.com/kirill-shirokov/findup](https://github.com/kirill-shirokov/findup)
 - LinkedIn: [https://www.linkedin.com/in/kirill-shirokov](https://www.linkedin.com/in/kirill-shirokov/)
